@@ -1,5 +1,6 @@
 NUMBER_OF_F = 1
 NUMBER_OF_NODES = NUMBER_OF_F * 3 + 1
+TIMEOUT_SECONDS = 10
 
 # truffle development blockchain address
 BLOCKCHAIN_ADDRESS = 'http://127.0.0.1:8543'

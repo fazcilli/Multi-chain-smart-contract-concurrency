@@ -3,10 +3,20 @@ import os
 import random
 import config
 import requests
-from flask import Flask, session
+import time
+from flask import Flask, request
+from flask_caching import Cache
 
 service = Flask(__name__)
-service.config.update(SECRET_KEY='service-key', ENV='development')
+options = {
+    "DEBUG": True,          # some Flask specific configs
+    "CACHE_TYPE": "SimpleCache",  # Flask-Caching related configs
+    "CACHE_DEFAULT_TIMEOUT": 30000000,
+    "SECRET_KEY": 'service-key',
+    "ENV": 'development'
+}
+service.config.from_mapping(options)
+cache = Cache(service)
 
 @service.route('/')
 def index():
@@ -35,11 +45,37 @@ def index():
 @service.route('/simulate')
 def simulate():
     '''Simulates a pbft consensus. If the consensus approves the request, a message will be sent to all copies of the smart contract'''
-    session["primary"] = random.randint(1, config.NUMBER_OF_NODES)
-    request = json.dumps({"newkey": "newvalue"})
+    cache.set("primary", random.randint(1, config.NUMBER_OF_NODES))
+    key = json.dumps({"newkey": "newvalue"})
+    primary = str(cache.get("primary"))
     # send initial request to primary
-    requests.get('http://127.0.0.1:500' + str(session["primary"]) + '/init' + '?key=' + request)
-    return "<h2>Return <a href='/'>Home</a> to see if message has changed</h2>"
+    requests.get('http://127.0.0.1:500' + primary + '/init' + '?key=' + key)
+    messages = cache.get("committed_messages") or {}
+    start = time.time()
+
+    while time.time() - start < config.TIMEOUT_SECONDS:
+        time.sleep(1)
+        if key in messages and messages[key] >= config.NUMBER_OF_F + 1:
+            # reset messages for this key so we don't send it again
+            del messages[key]
+            return "<h2>Successfully committed.</h2><br/><h2>Return <a href='/'>Home</a> to see if message has changed</h2>"
+    return "Timeout."
+
+@service.route('/committed')
+def committed():
+    args = request.args
+    if "key" not in args:
+        return 'Argument Error'
+    key = args["key"]
+    if not cache.get("committed_messages"):
+        messages = {}
+    else:
+        messages = cache.get("committed_messages")
+
+    messages[key] = messages.get(key, 0) + 1
+    cache.set("committed_messages", messages)
+    print("Success received by port " + str(request.server[1]))
+    return "Success"
 
 def clean():
     for i in range(config.NUMBER_OF_NODES):

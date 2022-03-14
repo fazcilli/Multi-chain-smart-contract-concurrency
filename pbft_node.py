@@ -16,6 +16,9 @@ options = {
 app.config.from_mapping(options)
 cache = Cache(app)
 
+def return_committed(key):
+    requests.get('http://127.0.0.1:5000/committed?key=' + key)
+
 def send_message(type, key, extra=""):
     '''Send messages to all replicas. Type can be one of PREPREPARE, PREPARE, COMMIT'''
     port = str(request.server[1])
@@ -24,22 +27,22 @@ def send_message(type, key, extra=""):
 
 def send_request(key, port):
     '''Upon successfull pbft consensus, send request to all copies of the smart contract'''
-    from web3 import Web3, HTTPProvider
-
-    # Client instance to interact with the blockchain
-    web3 = Web3(HTTPProvider(config.BLOCKCHAIN_ADDRESS))
-    # Set the default account (so we don't need to set the "from" for every transaction call)
-    web3.eth.defaultAccount = web3.eth.accounts[0]
-
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    with open(current_dir + config.CONTRACT_PATH) as file:
-        contract_json = json.load(file)  # load contract info as JSON
-        contract_abi = contract_json['abi']  # fetch contract's abi - necessary to call its functions
-    # Fetch deployed contract references
-    contract = web3.eth.contract(address=config.CONTRACT_ADDR, abi=contract_abi)
-
-    # Call contract function (this is not persisted to the blockchain)
-    contract.functions.setGreetings(key).call()
+    # from web3 import Web3, HTTPProvider
+    #
+    # # Client instance to interact with the blockchain
+    # web3 = Web3(HTTPProvider(config.BLOCKCHAIN_ADDRESS))
+    # # Set the default account (so we don't need to set the "from" for every transaction call)
+    # web3.eth.defaultAccount = web3.eth.accounts[0]
+    #
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # with open(current_dir + config.CONTRACT_PATH) as file:
+    #     contract_json = json.load(file)  # load contract info as JSON
+    #     contract_abi = contract_json['abi']  # fetch contract's abi - necessary to call its functions
+    # # Fetch deployed contract references
+    # contract = web3.eth.contract(address=config.CONTRACT_ADDR, abi=contract_abi)
+    #
+    # # Call contract function (this is not persisted to the blockchain)
+    # contract.functions.setGreetings(key).call()
     print("Smart contract called from port " + str(port))
 
 @app.route('/')
@@ -87,7 +90,6 @@ def prepare():
         messages = {}
     else:
         messages = cache.get("prepare_messages")
-    print(messages)
     messages[key] = messages.get(key, 0) + 1
     if messages[key] >= config.NUMBER_OF_F*2 + 1:
         send_message("COMMIT", key)
@@ -112,6 +114,7 @@ def commit():
     if messages[key] >= config.NUMBER_OF_F*2 + 1:
         # send request to smart contract
         send_request(key, port)
+        return_committed(key)
         # reset messages for this key so we don't send it again
         del messages[key]
     cache.set("commit_messages", messages)
