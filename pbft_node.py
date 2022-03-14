@@ -73,7 +73,7 @@ def preprepare():
         return 'Argument Error'
     key = args["key"]
 
-    if not cache.get("b") or args["b"] > cache.get("b"):
+    if not cache.get("b") or int(args["b"]) > int(cache.get("b")):
         cache.set("b", int(args["b"]))
         send_message("PREPARE", key)
     print("Preprepare received by port " + str(request.server[1]))
