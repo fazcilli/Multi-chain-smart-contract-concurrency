@@ -1,15 +1,26 @@
-from flask import Flask, session, request
+from flask import Flask, request
 import requests
 import config
 import os
 import json
+from flask_caching import Cache
+
 app = Flask(__name__)
-app.config.update(SECRET_KEY='node-key', ENV='development')
+options = {
+    "DEBUG": True,          # some Flask specific configs
+    "CACHE_TYPE": "SimpleCache",  # Flask-Caching related configs
+    "CACHE_DEFAULT_TIMEOUT": 30000000,
+    "SECRET_KEY": 'node-key',
+    "ENV": 'development'
+}
+app.config.from_mapping(options)
+cache = Cache(app)
 
 def send_message(type, key, extra=""):
     '''Send messages to all replicas. Type can be one of PREPREPARE, PREPARE, COMMIT'''
+    port = str(request.server[1])
     for i in range(config.NUMBER_OF_NODES):
-        requests.get('http://127.0.0.1:500' + str(i+1) + '/' + type.lower() + '?key=' + key + extra)
+        requests.get('http://127.0.0.1:500' + str(i+1) + '/' + type.lower() + '?port='+ port +'&key=' + key + extra)
 
 def send_request(key, port):
     '''Upon successfull pbft consensus, send request to all copies of the smart contract'''
@@ -29,7 +40,7 @@ def send_request(key, port):
 
     # Call contract function (this is not persisted to the blockchain)
     contract.functions.setGreetings(key).call()
-    print("Set greetings called from port " + str(port))
+    print("Smart contract called from port " + str(port))
 
 @app.route('/')
 def index():
@@ -59,13 +70,10 @@ def preprepare():
         return 'Argument Error'
     key = args["key"]
 
-    if "b" not in session:
-        session["b"] = args["b"]
+    if not cache.get("b") or args["b"] > cache.get("b"):
+        cache.set("b", int(args["b"]))
         send_message("PREPARE", key)
-    elif args["b"] > session["b"]:
-        session["b"] = args["b"]
-        send_message("PREPARE", key)
-    print("Preprepare received by " + request.url)
+    print("Preprepare received by port " + str(request.server[1]))
     return "Preprepare"
 
 @app.route('/prepare', methods=['GET'])
@@ -75,14 +83,18 @@ def prepare():
         return 'Argument Error'
     key = args["key"]
 
-    if "prepare_messages" not in session:
-        session["prepare_messages"] = {}
-    messages = session["prepare_messages"]
+    if not cache.get("prepare_messages"):
+        messages = {}
+    else:
+        messages = cache.get("prepare_messages")
+    print(messages)
     messages[key] = messages.get(key, 0) + 1
-    session["prepare_messages"] = messages
     if messages[key] >= config.NUMBER_OF_F*2 + 1:
         send_message("COMMIT", key)
-    print("Prepare received by " + request.url + " sent by " + request.remote_addr)
+        # reset messages for this key so we don't send it again
+        del messages[key]
+    cache.set("prepare_messages", messages)
+    print("Prepare received by " + str(request.server[1]) + " sent by " + args["port"])
     return "Prepare"
 
 @app.route('/commit', methods=['GET'])
@@ -91,15 +103,17 @@ def commit():
     if "key" not in args:
         return 'Argument Error'
     key = args["key"]
-
-    if "commit_messages" not in session:
-        session["commit_messages"] = {}
-    messages = session["commit_messages"]
+    if not cache.get("commit_messages"):
+        messages = {}
+    else:
+        messages = cache.get("commit_messages")
     messages[key] = messages.get(key, 0) + 1
-    session["commit_messages"] = messages
-    port = request.url
+    port = request.server[1]
     if messages[key] >= config.NUMBER_OF_F*2 + 1:
         # send request to smart contract
         send_request(key, port)
-    print("Commit received by " + request.url + " sent by " + request.remote_addr)
+        # reset messages for this key so we don't send it again
+        del messages[key]
+    cache.set("commit_messages", messages)
+    print("Commit received by " + str(request.server[1]) + " sent by " + args["port"])
     return "Commit"

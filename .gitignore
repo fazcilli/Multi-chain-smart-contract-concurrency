@@ -4,3 +4,4 @@ venv/**/*
 __pycache__/
 genesis.json~
 .github
+blkchain/geth/chaindata/
