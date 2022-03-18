@@ -1,11 +1,13 @@
 import json
-import os
 import random
 import config
 import requests
 import time
 from flask import Flask, request
 from flask_caching import Cache
+import utils
+from solcx import install_solc
+install_solc(version='latest')
 
 service = Flask(__name__)
 options = {
@@ -17,48 +19,50 @@ options = {
 }
 service.config.from_mapping(options)
 cache = Cache(service)
+from web3 import Web3, HTTPProvider
+
+# Client instance to interact with the blockchain
+web3 = Web3(HTTPProvider(config.BLOCKCHAIN_ADDRESS))
+# Set the default account (so we don't need to set the "from" for every transaction call)
+web3.eth.defaultAccount = web3.eth.accounts[0]
 
 @service.route('/')
 def index():
     '''Index page route'''
-    from web3 import Web3, HTTPProvider
 
-    # Client instance to interact with the blockchain
-    web3 = Web3(HTTPProvider(config.BLOCKCHAIN_ADDRESS))
-    # Set the default account (so we don't need to set the "from" for every transaction call)
-    web3.eth.defaultAccount = web3.eth.accounts[0]
+    contracts = cache.get("contracts") or []
+    text = "<h1>Offchain service!</h1><br/><br/><br/>"
+    text += str(len(contracts)) + " Contracts found. </br><ul>"
+    for c in contracts:
+        contract = web3.eth.contract(**c)
+        message = contract.functions.greet().call()
+        text += "<li><b>Address:</b> " + c["address"] + " , <b>Message:</b> " + message + "</li>"
+    text += "</ul>"
+    text += '<h2>To simulate smart contract update go to <a href="http://127.0.0.1:5000/simulate">http://127.0.0.1:5000/simulate</a></h2>'
+    text += '<h2>To create smart contracts go to <a href="http://127.0.0.1:5000/create?number=2">http://127.0.0.1:5000/create?number=2</a></h2>'
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    with open(current_dir + config.CONTRACT_PATH) as file:
-        contract_json = json.load(file)  # load contract info as JSON
-        contract_abi = contract_json['abi']  # fetch contract's abi - necessary to call its functions
-    # Fetch deployed contract references
-    contract = web3.eth.contract(address=config.CONTRACT_ADDR, abi=contract_abi)
-
-    # Call contract function (this is not persisted to the blockchain)
-    message = contract.functions.getGreetings().call()
-
-    text = "<h1>PBFT service!</h1><br/><br/><br/>"
-    text += "<p>Current message from smart contract: "+message+"</p><br/><br/><br/>"
-    return text + '<h2>To simulate smart contract update go to <a href="http://127.0.0.1:5000/simulate">http://127.0.0.1:5000/simulate</a></h2>'
+    text += '<h2>To evaulate with the current configuration in config.py go to <a href="http://127.0.0.1:5000/evaluate">http://127.0.0.1:5000/evaluate</a></h2>'
+    return text
 
 @service.route('/simulate')
 def simulate():
     '''Simulates a pbft consensus. If the consensus approves the request, a message will be sent to all copies of the smart contract'''
+    start = time.time()
     cache.set("primary", random.randint(1, config.NUMBER_OF_NODES))
     key = json.dumps({"newkey": "newvalue"})
     primary = str(cache.get("primary"))
     # send initial request to primary
     requests.get('http://127.0.0.1:500' + primary + '/init' + '?key=' + key)
     messages = cache.get("committed_messages") or {}
-    start = time.time()
 
     while time.time() - start < config.TIMEOUT_SECONDS:
         time.sleep(1)
         if key in messages and messages[key] >= config.NUMBER_OF_F + 1:
+            print("f+1 committed message received by offchain nodes. Updating contracts...")
+            updateSmartContracts()
             # reset messages for this key so we don't send it again
             del messages[key]
-            return "<h2>Successfully committed.</h2><br/><h2>Return <a href='/'>Home</a> to see if message has changed</h2>"
+            return "<h2>Successfully committed.</h2><br/><h2>Return <a href='/'>Home</a> to see if message has changed</h2><br/>" + "Operation took %.2gs" % (time.time() - start)
     return "Timeout."
 
 @service.route('/committed')
@@ -74,24 +78,39 @@ def committed():
 
     messages[key] = messages.get(key, 0) + 1
     cache.set("committed_messages", messages)
-    print("Success received by port " + str(request.server[1]))
-    return "Success"
+    return "Success. Return <a href='/'>Home</a> to see if smart contracts are updated."
 
-def clean():
-    for i in range(config.NUMBER_OF_NODES):
-        os.system("kill -9 $(lsof -ti:{})".format(str(5001 + i)))
-    os.system("kill -9 $(lsof -ti:5000)")
+def updateSmartContracts():
+    contracts = cache.get("contracts") or []
+    for c in contracts:
+        contract = web3.eth.contract(**c)
+        tx_hash = contract.functions.setGreeting('New message').transact()
+        tx_receipt = web3.eth.wait_for_transaction_receipt(tx_hash)
 
-def register_pbft_nodes():
-    command = "export FLASK_APP=pbft_node;"
-    for i in range(config.NUMBER_OF_NODES):
-        command += "export FLASK_RUN_PORT=" + str(5001 + i) + ";"
-        command += "flask run"
-        command += " & "
-    command += "export FLASK_APP=service; export FLASK_RUN_PORT=5000; flask run"
-    os.system(command)
+@service.route('/create')
+def createsmartcontracts():
+
+    args = request.args
+    try:
+        number = int(args["number"])
+    except:
+        number = 2
+
+    utils.create_contracts(number, cache)
+    contracts = cache.get("contracts") or []
+    text = str(len(contracts)) + " Contracts created. </br><ul>"
+    for c in contracts:
+        contract = web3.eth.contract(**c)
+        message = contract.functions.greet().call()
+        text += "<li><b>Address:</b> " + c["address"] + " , <b>Message:</b> " + message + "</li>"
+    return text + "</ul><br/>Return <a href='/'>home</a>"
+
+@service.route('/evaluate')
+def evaluate():
+    utils.create_contracts(config.NUMBER_OF_CONTRACTS, cache)
+    return simulate()
 
 
 if __name__ == '__main__':
-    clean()
-    register_pbft_nodes()
+    utils.clean()
+    utils.register_pbft_nodes()
