@@ -36,3 +36,31 @@
 14:55:13.351783 version@stat F·[3] S·42KiB[42KiB] Sc·[0.75]
 14:55:13.373306 db@janitor F·5 G·0
 14:55:13.373376 db@open done T·36.041327ms
+=============== Mar 15, 2022 (PDT) ===============
+16:31:11.348030 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+16:31:11.381776 version@stat F·[3] S·42KiB[42KiB] Sc·[0.75]
+16:31:11.381776 db@open opening
+16:31:11.382840 version@stat F·[3] S·42KiB[42KiB] Sc·[0.75]
+16:31:11.816056 db@janitor F·5 G·0
+16:31:11.816056 db@open done T·434.28ms
+16:31:11.862797 db@close closing
+16:31:11.862797 db@close done T·0s
+=============== Mar 15, 2022 (PDT) ===============
+16:31:49.573238 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+16:31:49.573238 version@stat F·[3] S·42KiB[42KiB] Sc·[0.75]
+16:31:49.573238 db@open opening
+16:31:49.573238 journal@recovery F·1
+16:31:49.577258 journal@recovery recovering @11
+16:31:49.686750 memdb@flush created L0@13 N·1 S·332B "eth..L\x87%,v1133":"eth..L\x87%,v1133"
+16:31:49.689890 version@stat F·[4] S·42KiB[42KiB] Sc·[1.00]
+16:31:49.786736 db@janitor F·6 G·0
+16:31:49.786736 db@open done T·213.4978ms
+16:31:49.787246 table@compaction L0·4 -> L1·0 S·42KiB Q·1134
+16:31:49.874715 table@build created L1@16 N·477 S·30KiB "Dat..ion,v12":"unc..own,v1131"
+16:31:49.874715 version@stat F·[0 1] S·30KiB[0B 30KiB] Sc·[0.00 0.00]
+16:31:49.918586 table@compaction committed F-3 S-11KiB Ke·0 D·653 T·130.3445ms
+16:31:49.918586 table@remove removed @8
+16:31:49.918586 table@remove removed @5
+16:31:49.919136 table@remove removed @2
+16:48:21.676338 db@close closing
+16:48:21.677336 db@close done T·998.3µs
