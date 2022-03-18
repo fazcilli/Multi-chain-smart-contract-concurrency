@@ -32,16 +32,17 @@ def index():
 
     contracts = cache.get("contracts") or []
     text = "<h1>Offchain service!</h1><br/><br/><br/>"
-    text += str(len(contracts)) + " Contracts found. </br><ul>"
+    text += str(config.NUMBER_OF_NODES) + " offchain nodes active. </br>"
+    text += str(len(contracts)) + " smart contracts found. </br><ul>"
     for c in contracts:
         contract = web3.eth.contract(**c)
         message = contract.functions.greet().call()
         text += "<li><b>Address:</b> " + c["address"] + " , <b>Message:</b> " + message + "</li>"
     text += "</ul>"
-    text += '<h2>To simulate smart contract update go to <a href="http://127.0.0.1:5000/simulate">http://127.0.0.1:5000/simulate</a></h2>'
     text += '<h2>To create smart contracts go to <a href="http://127.0.0.1:5000/create?number=2">http://127.0.0.1:5000/create?number=2</a></h2>'
+    text += '<h2>To simulate smart contract update go to <a href="http://127.0.0.1:5000/simulate">http://127.0.0.1:5000/simulate</a></h2>'
 
-    text += '<h2>To evaulate with the current configuration in config.py go to <a href="http://127.0.0.1:5000/evaluate">http://127.0.0.1:5000/evaluate</a></h2>'
+    text += '<h2>To evaluate with the current configuration in config.py go to <a href="http://127.0.0.1:5000/evaluate">http://127.0.0.1:5000/evaluate</a></h2>'
     return text
 
 @service.route('/simulate')
@@ -60,9 +61,16 @@ def simulate():
         if key in messages and messages[key] >= config.NUMBER_OF_F + 1:
             print("f+1 committed message received by offchain nodes. Updating contracts...")
             updateSmartContracts()
+            end = time.time()
             # reset messages for this key so we don't send it again
             del messages[key]
-            return "<h2>Successfully committed.</h2><br/><h2>Return <a href='/'>Home</a> to see if message has changed</h2><br/>" + "Operation took %.2gs" % (time.time() - start)
+            n = len(cache.get("contracts") or [])
+            f = config.NUMBER_OF_F
+            text = "<h2>Successfully committed.</h2><br/><h2>Return <a href='/'>Home</a> to see if message has changed</h2>"
+            text += "<br/>" + "Operation took %.2gs" % (end - start)
+            text += "<br>N: " + str(n)
+            text += "<br>F: " + str(f)
+            return text
     return "Timeout."
 
 @service.route('/committed')
@@ -107,8 +115,34 @@ def createsmartcontracts():
 
 @service.route('/evaluate')
 def evaluate():
+    cache.set("contracts", [])
     utils.create_contracts(config.NUMBER_OF_CONTRACTS, cache)
-    return simulate()
+    text = simulate()
+    return text
+
+@service.route('/tps')
+def tp_storage():
+    tps_opts = utils.create_tpstorage()
+    tpb_opts = utils.create_tpbackup()
+
+    contract_storage = web3.eth.contract(**tps_opts)
+    contract_backup = web3.eth.contract(**tpb_opts)
+    # set backup
+    hash = contract_storage.functions.setBackupAddr(tpb_opts["address"])
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+    # set backup
+    hash = contract_backup.functions.setBackupAddr(tps_opts["address"])
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    hash = contract_storage.functions.proposeValue("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    hash = contract_backup.functions.proposeValue("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    last_entry = contract_storage.functions.getLastEntry().call()
+
+    return "Key: " + last_entry[0] + ", Value: " + str(last_entry[1])
 
 
 if __name__ == '__main__':
