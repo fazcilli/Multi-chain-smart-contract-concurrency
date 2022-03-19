@@ -6,10 +6,9 @@
 <!-- GETTING STARTED -->
 ## Getting Started
 
-In order to run our prototype, first we will install a local Ethereum network and install the libraries required to run the service. 
+In order to run the prototype, first we will install a local Ethereum network and install the libraries required to run the service. 
 
 ### Prerequisites
-* Install node and npm
 * Install geth
   ```sh
   $ brew tap ethereum/ethereum
@@ -56,6 +55,7 @@ In order to run our prototype, first we will install a local Ethereum network an
 - In order to create copies of our template smart contract, go to http://127.0.0.1:5000/create?number=x (x=number of smart contracts, default=2)
 
 - In order to simulate a transaction, go to http://127.0.0.1:5000/simulate
+- To start a smart contract inter-communication experiment, go to http://127.0.0.1:5000/tps which will create a main and a backup smart contract which can only be updated if they communicate and confirm getting the same message. 
 
 
 

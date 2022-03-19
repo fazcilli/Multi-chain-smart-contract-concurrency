@@ -120,6 +120,27 @@ def evaluate():
     text = simulate()
     return text
 
+def tp_storage_update():
+    tps_opts = cache.get('tps')
+    tpb_opts = cache.get('tpb')
+    contract_storage = web3.eth.contract(**tps_opts)
+    contract_backup = web3.eth.contract(**tpb_opts)
+    hash = contract_storage.functions.proposeValue("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    hash = contract_backup.functions.proposeValue("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    hash = contract_storage.functions.store("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    hash = contract_backup.functions.store("key1", 3).transact()
+    receipt = web3.eth.wait_for_transaction_receipt(hash)
+
+    last_entry = contract_storage.functions.getLastEntry().call()
+    print("Key: " + last_entry[0] + ", Value: " + str(last_entry[1]))
+    return "Key: " + last_entry[0] + ", Value: " + str(last_entry[1])
+
 @service.route('/tps')
 def tp_storage():
     tps_opts = utils.create_tpstorage()
@@ -128,21 +149,44 @@ def tp_storage():
     contract_storage = web3.eth.contract(**tps_opts)
     contract_backup = web3.eth.contract(**tpb_opts)
     # set backup
-    hash = contract_storage.functions.setBackupAddr(tpb_opts["address"])
+    hash = contract_storage.functions.setBackupAddr(tpb_opts["address"]).transact()
     receipt = web3.eth.wait_for_transaction_receipt(hash)
     # set backup
-    hash = contract_backup.functions.setBackupAddr(tps_opts["address"])
+    hash = contract_backup.functions.setBackupAddr(tps_opts["address"]).transact()
     receipt = web3.eth.wait_for_transaction_receipt(hash)
 
-    hash = contract_storage.functions.proposeValue("key1", 3).transact()
-    receipt = web3.eth.wait_for_transaction_receipt(hash)
+    cache.set("tps", tps_opts)
+    cache.set("tpb", tpb_opts)
 
-    hash = contract_backup.functions.proposeValue("key1", 3).transact()
-    receipt = web3.eth.wait_for_transaction_receipt(hash)
+    start = time.time()
+    cache.set("primary", random.randint(1, config.NUMBER_OF_NODES))
+    key = json.dumps({"newkey": "newvalue"})
+    primary = str(cache.get("primary"))
+    # send initial request to primary
+    requests.get('http://127.0.0.1:500' + primary + '/init' + '?key=' + key)
+    messages = cache.get("committed_messages") or {}
+    text = ""
+    while time.time() - start < config.TIMEOUT_SECONDS:
+        time.sleep(1)
+        if key in messages and messages[key] >= config.NUMBER_OF_F + 1:
+            print("f+1 committed message received by offchain nodes. Updating contracts...")
+            tp_storage_update()
+            end = time.time()
+            # reset messages for this key so we don't send it again
+            del messages[key]
+            n = len(cache.get("contracts") or [])
+            f = config.NUMBER_OF_F
+            text = "<h2>Successfully committed.</h2><br/>"
+            text += "<br/>" + "Operation took %.2gs" % (end - start)
+            text += "<br>N: 2"
+            text += "<br>F: " + str(f)
+            break
 
+    text += "<br/><br/>Key value pair added to smart contracts: <br/>"
     last_entry = contract_storage.functions.getLastEntry().call()
-
-    return "Key: " + last_entry[0] + ", Value: " + str(last_entry[1])
+    print("Key: " + last_entry[0] + ", Value: " + str(last_entry[1]))
+    text += "<br>Key: " + last_entry[0] + ", Value: " + str(last_entry[1])
+    return text
 
 
 if __name__ == '__main__':
